@@ -9,10 +9,14 @@ from io import BytesIO
 
 # --- Configuration & Gemini API Setup ---
 try:
-    API_KEY = st.secrets.get("GOOGLE_API_KEY")
-    if not API_KEY:
-        API_KEY = os.environ.get("GOOGLE_API_KEY")
-except AttributeError:
+    # For Streamlit Cloud deployment, set GOOGLE_API_KEY in an st.secrets.toml file
+    # or directly in the app's secrets settings on Streamlit Community Cloud.
+    # Example st.secrets.toml:
+    # GOOGLE_API_KEY = "YOUR_API_KEY_HERE"
+    API_KEY = "AIzaSyAddh04FxC9YPL6LfDGiVEgJcU1khxKLpA"
+    # if not API_KEY: # Fallback to environment variable if not in secrets
+    #     API_KEY = os.environ.get("GOOGLE_API_KEY")
+except AttributeError: # If st.secrets is not available (e.g. local run without secrets file)
     API_KEY = os.environ.get("GOOGLE_API_KEY")
 
 if not API_KEY:
