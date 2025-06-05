@@ -1,23 +1,19 @@
+# main.py
+
 import streamlit as st
 import os
 import json
 import google.generativeai as genai
-from pypdf import PdfReader # Using pypdf
-from io import BytesIO # To handle uploaded file in memory
+from pypdf import PdfReader
+from io import BytesIO
 
 # --- Configuration & Gemini API Setup ---
-# Attempt to get API key from Streamlit secrets first, then environment variable
 try:
-    # For Streamlit Cloud deployment, set GOOGLE_API_KEY in an st.secrets.toml file
-    # or directly in the app's secrets settings on Streamlit Community Cloud.
-    # Example st.secrets.toml:
-    # GOOGLE_API_KEY = "YOUR_API_KEY_HERE"
-    API_KEY = "AIzaSyAddh04FxC9YPL6LfDGiVEgJcU1khxKLpA"
-    # if not API_KEY: # Fallback to environment variable if not in secrets
-    #     API_KEY = os.environ.get("GOOGLE_API_KEY")
-except AttributeError: # If st.secrets is not available (e.g. local run without secrets file)
+    API_KEY = st.secrets.get("GOOGLE_API_KEY")
+    if not API_KEY:
+        API_KEY = os.environ.get("GOOGLE_API_KEY")
+except AttributeError:
     API_KEY = os.environ.get("GOOGLE_API_KEY")
-
 
 if not API_KEY:
     st.error("🚨 GOOGLE_API_KEY not found! Please set it in your Streamlit secrets or environment variables.")
@@ -28,7 +24,6 @@ try:
 except Exception as e:
     st.error(f"🚨 Error configuring Gemini API: {e}")
     st.stop()
-
 
 GENERATION_CONFIG = {
     "temperature": 0.2,
@@ -50,9 +45,8 @@ model = genai.GenerativeModel(
     safety_settings=SAFETY_SETTINGS
 )
 
-# --- Helper Functions (adapted from previous script) ---
+# --- Helper Functions ---
 def extract_text_from_pdf_bytes(pdf_bytes):
-    """Extracts text from PDF bytes."""
     try:
         pdf_file = BytesIO(pdf_bytes)
         reader = PdfReader(pdf_file)
@@ -67,7 +61,6 @@ def extract_text_from_pdf_bytes(pdf_bytes):
         return None
 
 def call_gemini_api(prompt_text):
-    """Generic function to call the Gemini API and parse JSON output."""
     try:
         response = model.generate_content(prompt_text)
         raw_response_text = response.text
@@ -91,17 +84,10 @@ def call_gemini_api(prompt_text):
             return {"error": f"Content blocked: {response.prompt_feedback.block_reason}"}
         return {"error": "An unexpected error occurred with the Gemini API.", "details": str(e)}
 
-
+# --- Core Logic Functions ---
 def screen_resume_llm(resume_text, job_description_text):
-    """
-    Uses Gemini to screen a resume against a job description.
-    (Renamed from screen_resume to avoid conflict if you also want the sentiment part)
-    """
-    if not resume_text:
-        return {"error": "Resume text is empty."}
-    if not job_description_text:
-        return {"error": "Job description text is empty."}
-
+    if not resume_text: return {"error": "Resume text is empty."}
+    if not job_description_text: return {"error": "Job description text is empty."}
     prompt = f"""
     You are an expert HR AI assistant specializing in screening resumes for technical roles.
     Your task is to analyze the provided resume text against the given job description for a "Software Engineer" position.
@@ -129,94 +115,140 @@ def screen_resume_llm(resume_text, job_description_text):
     """
     return call_gemini_api(prompt)
 
+def analyze_employee_sentiment_llm(feedback_text):
+    if not feedback_text: return {"error": "Feedback text is empty."}
+    prompt = f"""
+    You are an expert HR AI Analyst specializing in employee engagement and sentiment analysis.
+    Analyze the following employee feedback text.
+
+    **Employee Feedback:**
+    ---
+    {feedback_text}
+    ---
+
+    Based *only* on the provided feedback, provide the following in JSON format:
+    1.  `overall_sentiment`: Classify the sentiment as "Positive", "Negative", or "Neutral".
+    2.  `sentiment_score`: A score from -1.0 (very negative) to 1.0 (very positive), reflecting the intensity of the sentiment.
+    3.  `key_themes`: A list of 2-4 key themes or topics mentioned in the feedback (e.g., "Work-life balance", "Management", "Salary", "Growth opportunities", "Company culture").
+    4.  `potential_attrition_risk`: Estimate the attrition risk based on this feedback as "Low", "Medium", or "High". Provide a brief justification.
+    5.  `suggested_engagement_strategies`: Based *only* on the issues or positive points raised, suggest 1-2 actionable, specific engagement strategies HR could consider. If sentiment is positive, suggest how to reinforce it.
+
+    Output *only* the JSON object. Do not include any other explanatory text before or after the JSON.
+    """
+    return call_gemini_api(prompt)
+
 # --- Streamlit UI ---
-st.set_page_config(page_title="AI Resume Screener", layout="wide")
-st.title("📄 AI-Powered Resume Screener")
-st.markdown("Upload a resume (PDF) and paste a job description to get an AI-driven analysis.")
+st.set_page_config(page_title="AI HR Tools", layout="wide")
+st.title("🤖 AI-Powered HR Automation Suite")
+st.markdown("Tools for Resume Screening and Employee Sentiment Analysis using Google Gemini.")
 
-# Default Job Description (can be edited by user)
-default_jd = """
-**Job Title: Software Engineer**
+# --- 1. Resume Screening Section ---
+with st.expander("📄 AI Resume Screener", expanded=True):
+    st.header("Resume Screening")
+    st.markdown("Upload a resume (PDF) and paste a job description to get an AI-driven analysis.")
 
-We are looking for a passionate Software Engineer to design, develop, and install software solutions.
-The successful candidate will be able to build high-quality, innovative, and fully performing software
-in compliance with coding standards and technical design.
+    default_jd = """
+    **Job Title: Software Engineer**
 
-**Responsibilities:**
-- Execute full lifecycle software development (SDLC).
-- Write well-designed, testable, efficient code.
-- Produce specifications and determine operational feasibility.
-- Integrate software components into a fully functional software system.
-- Develop software verification plans and quality assurance procedures.
-- Document and maintain software functionality.
-- Troubleshoot, debug and upgrade existing systems.
-- Deploy programs and evaluate user feedback.
-- Comply with project plans and industry standards.
-- Ensure software is updated with latest features.
+    We are looking for a passionate Software Engineer to design, develop, and install software solutions.
+    The successful candidate will be able to build high-quality, innovative, and fully performing software
+    in compliance with coding standards and technical design.
 
-**Requirements:**
-- Proven work experience as a Software Engineer or Software Developer.
-- Minimum 3 years of experience in software development.
-- Experience with test-driven development.
-- Proficiency in software engineering tools.
-- Ability to develop software in Python, Java, or C++.
-- Experience with databases such as SQL, PostgreSQL.
-- Experience with cloud platforms like AWS or Azure is a plus.
-- BSc degree in Computer Science, Engineering or relevant field.
-- Excellent problem-solving skills and attention to detail.
-- Good communication skills.
-"""
+    **Requirements:**
+    - Minimum 3 years of experience in software development using Python or Java.
+    - Experience with cloud platforms like AWS or Azure.
+    - BSc degree in Computer Science or relevant field.
+    """
+    col1, col2 = st.columns(2)
+    with col1:
+        st.subheader("📝 Job Description")
+        job_description_text = st.text_area("Paste the Job Description here:", value=default_jd, height=300, key="jd_input")
+    with col2:
+        st.subheader("📄 Upload Resume")
+        uploaded_file = st.file_uploader("Choose a PDF resume...", type="pdf", key="resume_uploader")
 
-col1, col2 = st.columns(2)
+    analyze_resume_button = st.button("✨ Analyze Resume", type="primary", key="analyze_resume_btn", use_container_width=True)
 
-with col1:
-    st.subheader("📝 Job Description")
-    job_description_text = st.text_area("Paste the Job Description here:", value=default_jd, height=400)
+    if analyze_resume_button and uploaded_file and job_description_text:
+        with st.spinner("Analyzing resume... 🧠"):
+            resume_bytes = uploaded_file.getvalue()
+            resume_text_content = extract_text_from_pdf_bytes(resume_bytes)
+
+            if resume_text_content:
+                screening_result = screen_resume_llm(resume_text_content, job_description_text)
+                st.subheader("🔍 Resume Analysis Result:")
+                if screening_result and "error" not in screening_result:
+                    st.json(screening_result)
+                    st.markdown("---")
+                    st.markdown(f"**Overall Match Score:** `{screening_result.get('overall_match_score_percentage', 'N/A')}%`")
+                    st.markdown(f"**Summary for Recruiter:**")
+                    st.info(screening_result.get('summary_for_recruiter', 'N/A'))
+                elif screening_result and "error" in screening_result:
+                    st.error(f"Analysis Error: {screening_result.get('error')}")
+            else:
+                st.error("Could not extract text from the uploaded PDF.")
+    elif analyze_resume_button:
+        if not uploaded_file: st.warning("Please upload a resume PDF.")
+        if not job_description_text: st.warning("Please provide a job description.")
+
+st.markdown("---") # Separator
+
+# --- 2. Employee Sentiment Analysis Section ---
+with st.expander("💬 Employee Sentiment Analyzer", expanded=True):
+    st.header("Employee Sentiment Analysis")
+    st.markdown("Paste employee feedback (e.g., from surveys, exit interviews) to analyze sentiment and identify potential attrition risks.")
+
+    default_feedback_positive = "I love working here! My team is fantastic, and I feel challenged and supported. The recent training on new technologies was excellent, and I see clear paths for growth."
+    default_feedback_negative = "The workload has been insane lately, and I don't feel like management is listening to our concerns. I'm seriously considering looking for other opportunities if things don't change."
     
-    st.subheader("📄 Upload Resume")
-    uploaded_file = st.file_uploader("Choose a PDF resume...", type="pdf")
+    feedback_examples = {
+        "Positive Example": default_feedback_positive,
+        "Negative Example": default_feedback_negative,
+        "Neutral Example": "The job is fine. It pays the bills. Some days are good, some are okay.",
+        "Custom": ""
+    }
+    selected_example = st.selectbox("Load Example Feedback or Enter Custom:", options=list(feedback_examples.keys()), key="feedback_example_select")
+    
+    if selected_example == "Custom":
+        employee_feedback_text = st.text_area("Enter Employee Feedback Text:", height=200, key="feedback_input_custom")
+    else:
+        employee_feedback_text = st.text_area("Employee Feedback Text:", value=feedback_examples[selected_example], height=200, key="feedback_input_example")
 
-analyze_button = st.button("✨ Analyze Resume", type="primary", use_container_width=True)
 
-if analyze_button and uploaded_file and job_description_text:
-    with st.spinner("Analyzing resume... This may take a moment. 🧠"):
-        resume_bytes = uploaded_file.getvalue()
-        resume_text_content = extract_text_from_pdf_bytes(resume_bytes)
+    analyze_sentiment_button = st.button("📊 Analyze Sentiment", type="primary", key="analyze_sentiment_btn", use_container_width=True)
 
-        if resume_text_content:
-            # st.subheader("Extracted Resume Text (First 500 chars):") # For debugging
-            # st.text(resume_text_content[:500] + "...")
-            
-            screening_result = screen_resume_llm(resume_text_content, job_description_text)
-            
-            st.subheader("🔍 Analysis Result:")
-            if screening_result and "error" not in screening_result:
-                st.json(screening_result)
-
-                # Optionally, display key fields more prominently
+    if analyze_sentiment_button and employee_feedback_text:
+        with st.spinner("Analyzing sentiment... 🧠"):
+            sentiment_result = analyze_employee_sentiment_llm(employee_feedback_text)
+            st.subheader("📈 Sentiment Analysis Result:")
+            if sentiment_result and "error" not in sentiment_result:
+                st.json(sentiment_result)
+                # Display key fields more prominently
                 st.markdown("---")
-                st.markdown(f"**Overall Match Score:** `{screening_result.get('overall_match_score_percentage', 'N/A')}%`")
-                st.markdown(f"**Summary for Recruiter:**")
-                st.info(screening_result.get('summary_for_recruiter', 'N/A'))
+                st.markdown(f"**Overall Sentiment:** `{sentiment_result.get('overall_sentiment', 'N/A')}` (Score: `{sentiment_result.get('sentiment_score', 'N/A')}`)")
+                st.markdown(f"**Potential Attrition Risk:**")
+                risk = sentiment_result.get('potential_attrition_risk', 'N/A')
+                if risk == "High":
+                    st.error(f"🚨 {risk}")
+                elif risk == "Medium":
+                    st.warning(f"⚠️ {risk}")
+                else:
+                    st.success(f"✅ {risk}")
                 
-                if screening_result.get('extracted_skills'):
-                    st.markdown(f"**Extracted Skills:**")
-                    st.markdown(f"`{', '.join(screening_result.get('extracted_skills'))}`")
+                if sentiment_result.get('key_themes'):
+                    st.markdown(f"**Key Themes:**")
+                    st.markdown(f"`{', '.join(sentiment_result.get('key_themes'))}`")
+                
+                if sentiment_result.get('suggested_engagement_strategies'):
+                    st.markdown(f"**Suggested Engagement Strategies:**")
+                    for strategy in sentiment_result.get('suggested_engagement_strategies'):
+                        st.info(f"- {strategy}")
 
-            elif screening_result and "error" in screening_result:
-                st.error(f"Analysis Error: {screening_result.get('error')}")
-                if screening_result.get('details'):
-                    st.error(f"Details: {screening_result.get('details')}")
-                if screening_result.get('raw_response'):
-                     st.expander("Show Raw LLM Response").warning(screening_result.get('raw_response'))
+            elif sentiment_result and "error" in sentiment_result:
+                st.error(f"Analysis Error: {sentiment_result.get('error')}")
+    elif analyze_sentiment_button:
+        st.warning("Please enter some employee feedback text.")
 
-        else:
-            st.error("Could not extract text from the uploaded PDF.")
-elif analyze_button:
-    if not uploaded_file:
-        st.warning("Please upload a resume PDF.")
-    if not job_description_text:
-        st.warning("Please provide a job description.")
 
 st.markdown("---")
 st.caption("Powered by Google Gemini Pro & Streamlit")
